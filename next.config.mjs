@@ -21,6 +21,7 @@ function resolveDistDir() {
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  output: 'export',
   typedRoutes: true,
   outputFileTracingRoot: projectRoot,
   distDir: resolveDistDir(),
