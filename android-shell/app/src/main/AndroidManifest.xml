@@ -16,8 +16,8 @@
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
 
     <application
-        android:label="@string/app_name"
-        android:icon="@drawable/appicon"
+        android:label="@string/app_name_dear_leon"
+        android:icon="@mipmap/ic_launcher_dear_leon"
         android:allowBackup="true"
         android:supportsRtl="true"
         android:usesCleartextTraffic="false"

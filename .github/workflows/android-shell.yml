@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       site_url:
-        description: "要加载的自部署站点地址（https://…）"
+        description: "留空使用仓库变量，或填写 https://xfloat.netlify.app/"
         required: false
         type: string
   push:
@@ -14,14 +14,16 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    # 可选签名：仓库 Secrets 配置了 SHELL_KEYSTORE_BASE64 等四项时产出已签名 release
     env:
-      SHELL_KEYSTORE_BASE64: ${{ secrets.SHELL_KEYSTORE_BASE64 }}
-      SHELL_KEYSTORE_PASSWORD: ${{ secrets.SHELL_KEYSTORE_PASSWORD }}
-      SHELL_KEY_ALIAS: ${{ secrets.SHELL_KEY_ALIAS }}
-      SHELL_KEY_PASSWORD: ${{ secrets.SHELL_KEY_PASSWORD }}
       SHELL_SITE_URL: ${{ inputs.site_url || vars.SHELL_SITE_URL }}
     steps:
+      - name: Validate Shell site URL
+        shell: bash
+        run: |
+          if [[ "$SHELL_SITE_URL" != 'https://xfloat.netlify.app/' ]]; then
+            echo "::error::SHELL_SITE_URL must exactly match the approved HTTPS URL: https://xfloat.netlify.app/"
+            exit 1
+          fi
       - uses: actions/checkout@v4
 
       - uses: actions/setup-java@v4
@@ -33,23 +35,64 @@ jobs:
         with:
           gradle-version: "8.7"
 
-      - name: Decode keystore (optional)
-        if: ${{ env.SHELL_KEYSTORE_BASE64 != '' }}
+      - name: Build signed Release APK
+        shell: bash
+        env:
+          SHELL_KEYSTORE_BASE64: ${{ secrets.SHELL_KEYSTORE_BASE64 }}
+          SHELL_KEYSTORE_PASSWORD: ${{ secrets.SHELL_KEYSTORE_PASSWORD }}
+          SHELL_KEY_ALIAS: ${{ secrets.SHELL_KEY_ALIAS }}
+          SHELL_KEY_PASSWORD: ${{ secrets.SHELL_KEY_PASSWORD }}
         run: |
-          echo "$SHELL_KEYSTORE_BASE64" | base64 -d > /tmp/shell.keystore
-          echo "SHELL_KEYSTORE_FILE=/tmp/shell.keystore" >> "$GITHUB_ENV"
+          for secret in SHELL_KEYSTORE_BASE64 SHELL_KEYSTORE_PASSWORD SHELL_KEY_ALIAS SHELL_KEY_PASSWORD; do
+            if [[ -z "${!secret}" ]]; then
+              echo "::error::Missing required Release signing secret: $secret"
+              exit 1
+            fi
+          done
 
-      - name: Build APKs
-        run: gradle -p android-shell assembleDebug assembleRelease
+          umask 077
+          SHELL_KEYSTORE_FILE="$(mktemp "$RUNNER_TEMP/dear-leon-release.XXXXXX")"
+          export SHELL_KEYSTORE_FILE
+          trap 'rm -f -- "$SHELL_KEYSTORE_FILE"' EXIT
+          if ! printf '%s' "$SHELL_KEYSTORE_BASE64" | base64 --decode > "$SHELL_KEYSTORE_FILE"; then
+            echo "::error::Could not decode the Release keystore"
+            exit 1
+          fi
+          if [[ ! -f "$SHELL_KEYSTORE_FILE" || ! -s "$SHELL_KEYSTORE_FILE" ]]; then
+            echo "::error::Release keystore is missing or empty"
+            exit 1
+          fi
+          unset SHELL_KEYSTORE_BASE64
+          gradle -p android-shell assembleRelease
 
-      - name: Upload debug APK
+      - name: Verify Release APK signature
+        shell: bash
+        run: |
+          apk=android-shell/app/build/outputs/apk/release/app-release.apk
+          if [[ ! -f "$apk" || ! -s "$apk" ]]; then
+            echo "::error::Expected signed Release APK is missing or empty"
+            exit 1
+          fi
+          sdk_root="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          apksigner="$sdk_root/build-tools/34.0.0/apksigner"
+          if [[ ! -x "$apksigner" ]]; then
+            "$sdk_root/cmdline-tools/latest/bin/sdkmanager" "build-tools;34.0.0"
+          fi
+          "$apksigner" verify --verbose --print-certs "$apk"
+
+      - name: Upload verified Release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: dear-leon-release
+          path: android-shell/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+
+      - name: Build Debug APK
+        run: gradle -p android-shell assembleDebug
+
+      - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
           name: float-shell-debug
           path: android-shell/app/build/outputs/apk/debug/app-debug.apk
-
-      - name: Upload release APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: float-shell-release
-          path: android-shell/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
