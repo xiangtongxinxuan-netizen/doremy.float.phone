@@ -10,7 +10,7 @@ def configuredSiteUrl = System.getenv("SHELL_SITE_URL") ?: "https://xfloat.netli
 if (configuredSiteUrl != "https://xfloat.netlify.app/") {
     throw new GradleException("SHELL_SITE_URL must exactly match the approved HTTPS URL: https://xfloat.netlify.app/")
 }
-def siteUrl = configuredSiteUrl.replaceAll('/+
+def siteUrl = configuredSiteUrl.replaceAll("/+$", "")
 
 android {
     namespace 'app.floatphone.shell'
