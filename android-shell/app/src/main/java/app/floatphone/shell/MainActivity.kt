@@ -26,6 +26,11 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
+import app.floatphone.shell.bridge.MusicBridge
+import app.floatphone.shell.media.MediaStateStore
+import org.json.JSONObject
 
 /**
  * Float 小手机安卓壳：全屏 WebView 直接加载线上站点。
@@ -38,10 +43,25 @@ class MainActivity : AppCompatActivity() {
         const val VERSION = "1.0.0"
         /** 来电接听等场景的站内深链（必须以 SITE_URL 开头，否则忽略） */
         const val EXTRA_OPEN_URL = "open_url"
+        private const val MUSIC_NATIVE_OBJECT = "DearLeonMusicNative"
     }
 
     private lateinit var webView: WebView
+    private lateinit var musicBridge: MusicBridge
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
+    private val mediaStateListener = MediaStateStore.Listener { state ->
+        if (!::webView.isInitialized) return@Listener
+        val json = state.toJson(android.os.SystemClock.elapsedRealtime())
+        webView.post {
+            if (!isFinishing && !isDestroyed) {
+                val quotedJson = JSONObject.quote(json)
+                webView.evaluateJavascript(
+                    "window.dispatchEvent(new CustomEvent('dear-leon:netease-media-state',{detail:JSON.parse($quotedJson)}));",
+                    null,
+                )
+            }
+        }
+    }
 
     private val fileChooserLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -91,6 +111,7 @@ class MainActivity : AppCompatActivity() {
         volumeControlStream = AudioManager.STREAM_MUSIC
 
         webView = WebView(this)
+        musicBridge = MusicBridge(applicationContext)
         setContentView(webView)
 
         webView.settings.apply {
@@ -105,8 +126,23 @@ class MainActivity : AppCompatActivity() {
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, false)
 
         webView.addJavascriptInterface(ShellBridge(), "AndroidShell")
+        val siteOrigin = Uri.parse(SITE_URL).let { "${it.scheme}://${it.host}" }
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+            WebViewCompat.addWebMessageListener(
+                webView,
+                MUSIC_NATIVE_OBJECT,
+                setOf(siteOrigin),
+            ) { _, message, _, isMainFrame, replyProxy ->
+                musicBridge.onMessage(message, isMainFrame, replyProxy)
+            }
+        }
 
         webView.webViewClient = object : WebViewClient() {
+            override fun onPageFinished(view: WebView, url: String) {
+                super.onPageFinished(view, url)
+                if (Uri.parse(url).host == Uri.parse(SITE_URL).host) installMusicBridgeApi(view)
+            }
+
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 val url = request.url
                 val scheme = url.scheme ?: return false
@@ -210,10 +246,54 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun installMusicBridgeApi(view: WebView) {
+        view.evaluateJavascript(
+            """
+            (function(){
+              var nativeBridge=window.$MUSIC_NATIVE_OBJECT;
+              var shell=window.AndroidShell;
+              if(!nativeBridge||!shell||shell.__dearLeonMusicInstalled)return;
+              var seq=0,pending={};
+              nativeBridge.onmessage=function(event){
+                try{
+                  var data=JSON.parse(event.data||'{}');
+                  var item=pending[data.id];
+                  if(!item)return;
+                  delete pending[data.id];
+                  if(data.ok)item.resolve(data.result);else item.reject(new Error('native_bridge_error'));
+                }catch(_error){}
+              };
+              function request(action){
+                return new Promise(function(resolve,reject){
+                  var id='music_'+Date.now()+'_'+(++seq);
+                  pending[id]={resolve:resolve,reject:reject};
+                  nativeBridge.postMessage(JSON.stringify({id:id,action:action}));
+                });
+              }
+              shell.isNotificationListenerEnabled=function(){return request('isNotificationListenerEnabled');};
+              shell.openNotificationListenerSettings=function(){return request('openNotificationListenerSettings');};
+              shell.getNeteaseMediaState=function(){return request('getNeteaseMediaState');};
+              shell.__dearLeonMusicInstalled=true;
+            })();
+            """.trimIndent(),
+            null,
+        )
+    }
+
     override fun onDestroy() {
         CookieManager.getInstance().flush()
         webView.destroy()
         super.onDestroy()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        MediaStateStore.addListener(mediaStateListener)
+    }
+
+    override fun onStop() {
+        MediaStateStore.removeListener(mediaStateListener)
+        super.onStop()
     }
 
     /** 暴露给网页的原生桥（网页侧可用 window.AndroidShell 特性检测壳环境）。 */
@@ -243,5 +323,6 @@ class MainActivity : AppCompatActivity() {
                 )
             }
         }
+
     }
 }
