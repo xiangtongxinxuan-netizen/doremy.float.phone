@@ -46,8 +46,31 @@ jobs:
       - name: Test TypeScript bridge
         run: node --test lib/native-music-bridge.test.ts
 
-      - name: Test Kotlin and build Debug APK
-        run: gradle -p android-shell testDebugUnitTest assembleDebug --stacktrace
+      - name: Test Kotlin
+        shell: bash
+        run: |
+          set +e
+          gradle -p android-shell testDebugUnitTest --stacktrace --console=plain 2>&1 | tee kotlin-test.log
+          status=${PIPESTATUS[0]}
+          set -e
+          if [[ $status -ne 0 ]]; then
+            summary="$(grep -E '(^e: |error:|FAILURE:|What went wrong|Execution failed|Manifest merger failed)' kotlin-test.log | tail -n 25 | tr '\n' ' ' | sed 's/%/%25/g; s/\r//g')"
+            echo "::error title=Kotlin test failure::${summary:-Gradle test failed; see job log}"
+            exit "$status"
+          fi
+
+      - name: Build Debug APK
+        shell: bash
+        run: |
+          set +e
+          gradle -p android-shell assembleDebug --stacktrace --console=plain 2>&1 | tee debug-build.log
+          status=${PIPESTATUS[0]}
+          set -e
+          if [[ $status -ne 0 ]]; then
+            summary="$(grep -E '(^e: |error:|FAILURE:|What went wrong|Execution failed|Manifest merger failed)' debug-build.log | tail -n 25 | tr '\n' ' ' | sed 's/%/%25/g; s/\r//g')"
+            echo "::error title=Debug build failure::${summary:-Gradle build failed; see job log}"
+            exit "$status"
+          fi
 
       - name: Verify isolated Debug identity
         shell: bash
