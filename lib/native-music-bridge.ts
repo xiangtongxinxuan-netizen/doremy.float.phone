@@ -148,4 +148,3 @@ export function estimateNeteasePosition(
   const nonNegative = Math.max(0, Math.round(raw));
   return state.durationMs > 0 ? Math.min(nonNegative, state.durationMs) : nonNegative;
 }
-
