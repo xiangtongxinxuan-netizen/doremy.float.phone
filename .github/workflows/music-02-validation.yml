@@ -49,10 +49,22 @@ jobs:
       - name: Test Kotlin and build Debug APK
         run: gradle -p android-shell testDebugUnitTest assembleDebug --stacktrace
 
+      - name: Verify isolated Debug identity
+        shell: bash
+        run: |
+          apk="android-shell/app/build/outputs/apk/debug/app-debug.apk"
+          aapt="$(find "${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools" -maxdepth 2 -type f -name aapt -print | sort -V | tail -n 1)"
+          test -n "$aapt" -a -x "$aapt"
+          badging="$($aapt dump badging "$apk")"
+          grep -Fq "package: name='app.floatphone.shell.music02test'" <<<"$badging"
+          grep -Fq "application-label:'dear Leon MUSIC-02 Test'" <<<"$badging"
+          grep -Fq 'applicationId "app.floatphone.shell"' android-shell/app/build.gradle
+          grep -Fq 'applicationIdSuffix ".music02test"' android-shell/app/build.gradle
+
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: music-02-debug-apk
+          name: music-02-isolated-debug-apk
           path: android-shell/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7

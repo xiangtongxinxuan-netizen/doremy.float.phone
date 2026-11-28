@@ -39,6 +39,10 @@ android {
     }
 
     buildTypes {
+        debug {
+            applicationIdSuffix ".music02test"
+            versionNameSuffix "-music02test"
+        }
         release {
             minifyEnabled false
             if (ksFile) signingConfig signingConfigs.release
