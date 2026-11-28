@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">小手机</string>
+    <string name="app_name">dear Leon</string>
     <string name="app_name_dear_leon">dear Leon</string>
+    <string name="netease_media_listener_name">dear Leon 媒体状态读取</string>
 </resources>

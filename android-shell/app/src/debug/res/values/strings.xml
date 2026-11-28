@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name_dear_leon">dear Leon MUSIC-02 Test</string>
+    <string name="app_name">dear Leon MUSIC-02 Test</string>
     <string name="netease_media_listener_name">dear Leon MUSIC-02 Test 媒体状态读取</string>
 </resources>
