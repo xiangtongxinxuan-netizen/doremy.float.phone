@@ -41,8 +41,7 @@ jobs:
       - name: Check branch diff
         shell: bash
         run: |
-          base="$(git merge-base origin/main HEAD)"
-          git diff --check "$base" HEAD
+          git diff --check 1dda06412d2fdadb7c9c29f025f54ad27e15a558 HEAD
 
       - name: Test TypeScript bridge
         run: node --test lib/native-music-bridge.test.ts
